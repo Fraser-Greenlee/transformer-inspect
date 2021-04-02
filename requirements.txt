@@ -1,0 +1,5 @@
+jupyter
+jupyterlab
+torch
+git+https://github.com/huggingface/transformers
+wandb
