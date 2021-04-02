@@ -293,6 +293,10 @@ def main():
             "You can do it from another script, save it, and load it from here, using --tokenizer_name."
         )
 
+    # allow padding samples
+    tokenizer.add_special_tokens({'pad_token': '<PAD>', 'bos_token': '<BOS>', 'eos_token': '<EOS>'})
+    tokenizer.model_max_length = 25
+
     if model_args.model_name_or_path:
         model = AutoModelForCausalLM.from_pretrained(
             model_args.model_name_or_path,
@@ -317,11 +321,12 @@ def main():
     text_column_name = "text" if "text" in column_names else column_names[0]
 
     def tokenize_function(examples):
-        return tokenizer(examples[text_column_name])
+        return tokenizer(examples[text_column_name], padding="max_length")
 
     tokenized_datasets = datasets.map(
         tokenize_function,
         batched=True,
+        batch_size=training_args.per_device_train_batch_size,
         num_proc=data_args.preprocessing_num_workers,
         remove_columns=column_names,
         load_from_cache_file=not data_args.overwrite_cache,
@@ -343,52 +348,19 @@ def main():
             )
         block_size = min(data_args.block_size, tokenizer.model_max_length)
 
-    # Main data processing function that will concatenate all texts from our dataset and generate chunks of block_size.
-    def group_texts(examples):
-        # Concatenate all texts.
-        concatenated_examples = {k: sum(examples[k], []) for k in examples.keys()}
-        total_length = len(concatenated_examples[list(examples.keys())[0]])
-        # We drop the small remainder, we could add padding if the model supported it instead of this drop, you can
-        # customize this part to your needs.
-        total_length = (total_length // block_size) * block_size
-        # Split by chunks of max_len.
-        result = {
-            k: [t[i : i + block_size] for i in range(0, total_length, block_size)]
-            for k, t in concatenated_examples.items()
-        }
-        result["labels"] = result["input_ids"].copy()
-        return result
-
-    # Note that with `batched=True`, this map processes 1,000 texts together, so group_texts throws away a remainder
-    # for each of those groups of 1,000 texts. You can adjust that batch_size here but a higher value might be slower
-    # to preprocess.
-    #
-    # To speed up this part, we use multiprocessing. See the documentation of the map method for more information:
-    # https://huggingface.co/docs/datasets/package_reference/main_classes.html#datasets.Dataset.map
-
-    lm_datasets = tokenized_datasets.map(
-        group_texts,
-        batched=True,
-        num_proc=data_args.preprocessing_num_workers,
-        load_from_cache_file=not data_args.overwrite_cache,
-    )
-
     if training_args.do_train:
         if "train" not in tokenized_datasets:
             raise ValueError("--do_train requires a train dataset")
-        train_dataset = lm_datasets["train"]
+        train_dataset = tokenized_datasets["train"]
         if data_args.max_train_samples is not None:
             train_dataset = train_dataset.select(range(data_args.max_train_samples))
 
     if training_args.do_eval:
         if "validation" not in tokenized_datasets:
             raise ValueError("--do_eval requires a validation dataset")
-        eval_dataset = lm_datasets["validation"]
+        eval_dataset = tokenized_datasets["validation"]
         if data_args.max_val_samples is not None:
             eval_dataset = eval_dataset.select(range(data_args.max_val_samples))
-
-    import pdb
-    pdb.set_trace()
 
     # Initialize our Trainer
     trainer = Trainer(
