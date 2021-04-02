@@ -132,15 +132,6 @@ class DataTrainingArguments:
             "value if set."
         },
     )
-
-    block_size: Optional[int] = field(
-        default=None,
-        metadata={
-            "help": "Optional input sequence length after tokenization."
-            "The training dataset will be truncated in block of this size for training."
-            "Default to the model max input length for single sentence inputs (take into account special tokens)."
-        },
-    )
     overwrite_cache: bool = field(
         default=False, metadata={"help": "Overwrite the cached training and evaluation sets"}
     )
@@ -321,7 +312,9 @@ def main():
     text_column_name = "text" if "text" in column_names else column_names[0]
 
     def tokenize_function(examples):
-        return tokenizer(examples[text_column_name], padding="max_length")
+        tokenized = tokenizer(examples[text_column_name], padding="max_length")
+        tokenized['labels'] = tokenized['input_ids'].copy()
+        return tokenized
 
     tokenized_datasets = datasets.map(
         tokenize_function,
@@ -331,22 +324,6 @@ def main():
         remove_columns=column_names,
         load_from_cache_file=not data_args.overwrite_cache,
     )
-
-    if data_args.block_size is None:
-        block_size = tokenizer.model_max_length
-        if block_size > 1024:
-            logger.warn(
-                f"The tokenizer picked seems to have a very large `model_max_length` ({tokenizer.model_max_length}). "
-                "Picking 1024 instead. You can change that default value by passing --block_size xxx."
-            )
-        block_size = 1024
-    else:
-        if data_args.block_size > tokenizer.model_max_length:
-            logger.warn(
-                f"The block_size passed ({data_args.block_size}) is larger than the maximum length for the model"
-                f"({tokenizer.model_max_length}). Using block_size={tokenizer.model_max_length}."
-            )
-        block_size = min(data_args.block_size, tokenizer.model_max_length)
 
     if training_args.do_train:
         if "train" not in tokenized_datasets:
