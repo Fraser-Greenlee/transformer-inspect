@@ -313,7 +313,8 @@ def main():
 
     def tokenize_function(examples):
         tokenized = tokenizer(examples[text_column_name], padding="max_length")
-        tokenized['labels'] = [[tokenizer.pad_token_id] + tkns for tkns in tokenized['input_ids']]
+        tokenized['labels'] = tokenized['input_ids'].copy()
+        tokenized['input_ids'] = [[tokenizer.bos_token_id] + tkns[:-1] for tkns in tokenized['input_ids']]
         return tokenized
 
     tokenized_datasets = datasets.map(
