@@ -119,13 +119,20 @@ def use_feedback(self, feedback_window_size=1):
                 f' or output_attentions={output_attentions} or use_cache={use_cache} or self.model_parallel={self.model_parallel}'
             )
 
+        # start change
         presents = None
         all_self_attentions = None
         all_cross_attentions = None
         all_hidden_states = () if output_hidden_states else None
         for feedback_i in range(0, hidden_states.size(1), feedback_window_size):
+            feedback_start, feedback_end = feedback_i * feedback_window_size, (feedback_i+1) * feedback_window_size
+
+            h_i = torch.ones(hidden_states.size(), device=hidden_states.device, requires_grad=False)
+            h_i[:, :feedback_start] = 0
+            h_i[:, feedback_end:] = 0
+            h_i_inv = -1 * (h_i - 1)
+
             for i, (block, layer_past) in enumerate(zip(self.h, past_key_values)):
-                feedback_start, feedback_end = feedback_i * feedback_window_size, (feedback_i+1) * feedback_window_size
 
                 if output_hidden_states:
                     all_hidden_states = all_hidden_states + (hidden_states[:, feedback_start: feedback_end],)
@@ -137,15 +144,13 @@ def use_feedback(self, feedback_window_size=1):
                     hidden_states,
                     layer_past=layer_past,
                     attention_mask=attention_mask,
-                    head_mask=head_mask[i],
-                    encoder_hidden_states=encoder_hidden_states,
-                    encoder_attention_mask=encoder_attention_mask,
                 )
 
-                # only update feedback window of hidden state
-                hidden_states = outputs[0][:, feedback_start: feedback_end]
+                hidden_states = hidden_states * h_i_inv + outputs[0] * h_i
+                # hidden_states[:, feedback_start: feedback_end] = outputs[0][:, feedback_start: feedback_end]
 
-            hidden_states = self.ln_f(hidden_states[:, feedback_start: feedback_end])
+            hidden_states = hidden_states * h_i_inv + self.ln_f(hidden_states) * h_i
+            # hidden_states[:, feedback_start: feedback_end] = self.ln_f(hidden_states[:, feedback_start: feedback_end])
         # end change
 
         hidden_states = hidden_states.view(*output_shape)
