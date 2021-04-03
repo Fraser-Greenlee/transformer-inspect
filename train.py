@@ -46,6 +46,8 @@ from transformers import (
 from transformers.trainer_utils import get_last_checkpoint, is_main_process
 from transformers.utils import check_min_version
 
+from feedback import use_feedback
+
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
 check_min_version("4.5.0.dev0")
@@ -97,6 +99,18 @@ class ModelArguments:
         metadata={
             "help": "Will use the token generated when running `transformers-cli login` (necessary to use this script "
             "with private models)."
+        },
+    )
+    use_feedback_window: bool = field(
+        default=False,
+        metadata={
+            "help": "Make GPT-2 recurrent on feedback windows of default size 1."
+        },
+    )
+    feedback_window_size: int = field(
+        default=1,
+        metadata={
+            "help": "Size of GPT-2 feedback windows."
         },
     )
 
@@ -300,6 +314,10 @@ def main():
     else:
         logger.info("Training new model from scratch")
         model = AutoModelForCausalLM.from_config(config)
+
+    if model_args.use_feedback_window:
+        logger.info(f"Using feedback window of size: {model_args.feedback_window_size}")
+        model.transformer = use_feedback(model.transformer, model_args.feedback_window_size)
 
     model.resize_token_embeddings(len(tokenizer))
 
